@@ -1,0 +1,23 @@
+GEM
+  remote: https://rubygems.org/
+  specs:
+    fiddle (1.1.8)
+    gosu (1.4.6)
+    opengl-bindings2 (2.0.5)
+      fiddle (~> 1.0)
+
+PLATFORMS
+  ruby
+  x86_64-linux
+
+DEPENDENCIES
+  gosu
+  opengl-bindings2
+
+CHECKSUMS
+  fiddle (1.1.8) sha256=7fa8ee3627271497f3add5503acdbc3f40b32f610fc1cf49634f083ef3f32eee
+  gosu (1.4.6) sha256=80c7fa48cf61f4960ef067fdd1c000d98b4adc8e11faeaa486543d00908a5c15
+  opengl-bindings2 (2.0.5) sha256=4fc4ff25680afd35376605ba6598e6073c9142e9004d8dee26a76ed28cbb4073
+
+BUNDLED WITH
+  4.0.20
