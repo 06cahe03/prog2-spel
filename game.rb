@@ -1,8 +1,19 @@
 require "gosu"
 
-class PathGenerator
-  attr_reader :path
+class Point
+  attr_reader :x, :y
 
+  def initialize(x, y)
+    @x = x
+    @y = y
+  end
+
+  def collide_box
+    [@x, @y, 25, 25]
+  end
+end
+
+class PathGenerator < Array
   # key: the direction we are going
   # val: x, y, direction we came from
   LOOKUP = {
@@ -25,7 +36,7 @@ class PathGenerator
       # filter truthy sides where we didnt come from
       result = sides.select {|k, v| k != dir && v}.keys
     end
-    return result
+    result
   end
 
   def find_entry()
@@ -35,17 +46,16 @@ class PathGenerator
       # find pixel with ONE connecting
       if arr.length == 1
         # add to path and return
-        @path << {
-          :x => x * 20 + 10, # screenspace middle
-          :y => 10
-        }
+        self << Point.new(x * 20 + 10, 10) # screenspace middle
         return x
       end
     end
-    return nil
+    nil
   end
 
   def initialize(source)
+    super()
+
     # create and export rgba data from file
     rgba = Gosu::Image.new(source).to_blob
 
@@ -55,7 +65,6 @@ class PathGenerator
     # grab R value from RGBA data and sort into lines
     pixels = rgba.bytes.each_slice(4)
     @lines = Array.new(40) {Array.new(50) {pixels.next[0]}}
-    @path = []
 
     # find "entry" pixel from the top
     # start of line MUST go down from the top
@@ -67,10 +76,7 @@ class PathGenerator
 
     while true do
       # push current point
-      @path << {
-        :x => x * 20 + 10, # screenspace middle
-        :y => y * 20 + 10
-      }
+      self << Point.new(x * 20 + 10, y * 20 + 10) # screenspace middle
 
       # check connecting pixels
       arr = find_connecting(x, y, dir)
@@ -100,41 +106,45 @@ class Game < Gosu::Window
 
     # debug stuff
     @debug = true
-    @font = Gosu::Font.new(24)
+    @font = Gosu::Font.new(32, { :name => "Comic Sans MS" })
 
     # import background and generate path
     @background = Gosu::Image.new("media/img/map_test3.png")
-    @test_path = PathGenerator.new("media/img/path_test3.png")
+    @path = PathGenerator.new("media/img/path_test3.png")
+
+    # custom cursor
+    @cursor = Cursor.new
 
     # store all objects and grabbed object
     @sprites = []
     @grabbed = nil
 
     # TEMP TEST ENEMY
-    @test_enemy = Sprite.new("media/img/carrot.png", @test_path.path[0][:x], @test_path.path[0][:y])
+    @test_enemy = Sprite.new("media/img/carrot.png", @path[0].x, @path[0].y)
     @test_enemy_i = 0
     @test_enemy_last = 0
     @sprites << @test_enemy
 
-    # TEMP TEST GRAB
-    test_grab = Grabbable.new("media/img/carrot.png", 20, 100)
-    @sprites << test_grab
+    # TEMP TEST store
+    @money = 69
+    test_shop_back = Sprite.new("media/img/store_background.png", 1000, 0)
+    @sprites << test_shop_back
 
-    # TEMP TEST inverted grab
-    bleh = test_grab.to_blob
-    out = []
-    bleh.bytes.each_slice(4) do |rgba|
-      out << 255 - rgba[0]
-      out << 255 - rgba[1]
-      out << 255 - rgba[2]
-      out << rgba[3]
-    end
-    test_grab2 = Grabbable.from_blob(test_grab.width, test_grab.height, out.pack("C*"))
-    test_grab2.move(20, 200)
-    @sprites << test_grab2
+    # TEMP TEST grab shop buy thing
+    test_shop = Buyable.new("media/img/carrot.png", 1100, 100)
+    @sprites << test_shop
+  end
+
+  def needs_cursor?
+    false
   end
 
   def update
+    # move cursor pos
+    if mouse_x > 0 && mouse_y > 0
+      @cursor.move(mouse_x, mouse_y)
+    end
+    
     # exec update on all sprites
     @sprites.each {|s| s.update}
 
@@ -150,41 +160,44 @@ class Game < Gosu::Window
     if Gosu.milliseconds - @test_enemy_last > 500
       @test_enemy_last = Gosu.milliseconds
       @test_enemy_i += 1
-      point = @test_path.path[@test_enemy_i % @test_path.path.length]
-      @test_enemy.move(point[:x], point[:y])
+      point = @path[@test_enemy_i % @path.length]
+      @test_enemy.move(point.x, point.y)
     end
   end
   
   def draw
     @background.draw(0, 0)
+    @cursor.draw(10000)
 
     # draw with rendering order (later elements draw on top)
     @sprites.each_with_index {|x, i| x.draw(i + 10)}
 
-    # placeholder for right side menu
-    Gosu.draw_rect(1000, 0, 280, 800, Gosu::Color::GRAY)
-
     # TEMP GRAB TEST
     if !@grabbed.nil?
       color = Gosu::Color::GREEN
-      # TODO: this is terrible
-      @test_path.path.each do |point|
-        if @grabbed[:s].hitbox?(point[:x], point[:y], 25)
-          color = Gosu::Color::RED
-          break
-        end
+      if collision(@grabbed[:s])
+        color = Gosu::Color::RED
       end
-      Gosu.draw_rect(@grabbed[:s].x - 10, @grabbed[:s].y - 10, @grabbed[:s].width + 20, @grabbed[:s].height + 20, color, 7)
-      #Gosu.draw_rect(@grabbed[:s].x, @grabbed[:s].y, @grabbed[:s].width, @grabbed[:s].height, Gosu::Color::GRAY, 8)
+      Gosu.draw_rect(
+        @grabbed[:s].x - 10,
+        @grabbed[:s].y - 10,
+        @grabbed[:s].width + 20,
+        @grabbed[:s].height + 20,
+        color,
+        @sprites.length - 2 + 10 # render under grabbed object (which is last)
+      )
     end
+
+    # TEMP TEST shop
+    @font.draw_text("$#{@money}", 1050, 750, 100)
 
     # TEMP ENEMY TEST
     if @debug
       #@font.draw_text("#{@grabbed[:s] || "nil"}", 10, 10, 0)
-      @test_path.path.each do |point|
-        Gosu.draw_rect(point[:x] - 25, point[:y] - 25, 50, 50, Gosu::Color::FUCHSIA, 5)
-        Gosu.draw_rect(point[:x] - 10, point[:y] - 10, 20, 20, Gosu::Color::BLUE, 6)
-        Gosu.draw_rect(point[:x], point[:y], 1, 1, Gosu::Color::YELLOW, 7)
+      @path.each do |point|
+        Gosu.draw_rect(point.x - 25, point.y - 25, 50, 50, Gosu::Color::FUCHSIA, 5)
+        Gosu.draw_rect(point.x - 10, point.y - 10, 20, 20, Gosu::Color::BLUE, 6)
+        Gosu.draw_rect(point.x, point.y, 1, 1, Gosu::Color::YELLOW, 7)
       end
     end
   end
@@ -193,18 +206,27 @@ class Game < Gosu::Window
     case btn
     when Gosu::MS_LEFT
       # try grab ONE grabbable
-      @sprites.select {|s| s.grabbable }.each do |s|
+      @sprites.each do |s|
         # check hitbox for sprite
-        if s.hitbox?(mouse_x, mouse_y)
+        if s.grabbable && s.hitbox?(mouse_x, mouse_y, 0, 0)
+          # duplicate if store item
+          if s.buyable
+            s = s.clone
+            # very optimized
+            @sprites << s
+          end
+
           # update state
           @grabbed = {
             :s => s,
             :x => s.x,
             :y => s.y
           }
+
           # update rendering order
           s = @sprites.delete(s)
           @sprites << s
+
           break
         end
       end
@@ -217,17 +239,26 @@ class Game < Gosu::Window
     when Gosu::MS_LEFT
       if !@grabbed.nil?
         # check if legal dropping point
-        @test_path.path.each do |point|
-          if @grabbed[:s].hitbox?(point[:x], point[:y], 25)
-            # illegal! return to sender
-            @grabbed[:s].move(@grabbed[:x], @grabbed[:y])
-            break
-          end
+        if collision(@grabbed[:s])
+          # illegal! return to sender
+          @grabbed[:s].move(@grabbed[:x], @grabbed[:y])
         end
+
         # remove anything grabbed
         @grabbed = nil
       end
     end
+  end
+
+  def collision(target)
+    # check for both path points and sprites
+    @path.chain(@sprites).each do |p|
+      # ignore myself
+      if target != p && target.hitbox?(*p.collide_box)
+        return true
+      end
+    end
+    false
   end
 end
 
@@ -237,6 +268,14 @@ class Sprite < Gosu::Image
   def initialize(source, x = 0, y = 0)
     super(source)
     move(x, y)
+  end
+
+  # common interface defs
+  def grabbable
+    false
+  end
+  def buyable
+    false
   end
 
   # dummy update function called from game
@@ -254,20 +293,51 @@ class Sprite < Gosu::Image
     @y = y
   end
 
-  # basic square hitbox with expansion (how much extra around to check)
-  def hitbox?(x, y, e = 0)
-    x + e >= @x && x - @x < width + e && y + e >= @y && y - @y < height + e
+  # "advanced" square hitbox
+  def hitbox?(x, y, sx, sy)
+    x + sx >= @x && x < @x + width + sx && y + sy >= @y && y < @y + height + sy
   end
 
-  # not sketchy at all
-  def grabbable
-    false
+  def collide_box
+    [@x + width / 2, @y + height / 2, width / 2, height / 2]
+  end
+end
+
+class Cursor < Sprite
+  NORMAL = "media/img/cursor_normal.png"
+  CLICK = "media/img/cursor_click.png"
+
+  def initialize
+    super(NORMAL, 0, 0)
+  end
+
+  def normal
+    insert(NORMAL, 0, 0)
+  end
+
+  def click
+    insert(CLICK, 0, 0)
   end
 end
 
 class Grabbable < Sprite
   def grabbable
     true
+  end
+end
+
+class Buyable < Grabbable
+  def initialize(source, x, y)
+    super(source, x, y)
+    @source = source
+  end
+
+  def buyable
+    true
+  end
+
+  def clone
+    Grabbable.new(@source, @x, @y)
   end
 end
 
